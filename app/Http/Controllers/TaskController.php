@@ -3,10 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Models\Task;
-use Illuminate\Http\RedirectResponse;
+use Illuminate\View\View;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\View\View;
+use Illuminate\Http\RedirectResponse;
 
 class TaskController extends Controller
 {
