@@ -17,10 +17,13 @@ class TaskFactory extends Factory
      */
     public function definition(): array
     {
+        $user = User::inRandomOrder()->first();
+
         return [
             'name' => fake()->text(30),
             'due_date' => now()->addDays(rand(1, 100)),
-            'user_id' => User::inRandomOrder()->first()->id,
+            'user_id' => $user->id,
+            'team_id' => $user->team_id,
         ];
     }
 }

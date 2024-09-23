@@ -6,10 +6,10 @@ use App\Models\User;
 use function Pest\Laravel\actingAs;
 
 it('allows administrator to access create task page', function () {
-    $user = User::factory()
+    $admin = User::factory()
         ->create(['role_id' => Role::ROLE_ADMIN]);
 
-    actingAs($user)
+    actingAs($admin)
         ->get(route('tasks.create'))
         ->assertOk();
 });
@@ -23,33 +23,71 @@ it('does not allow other users to access create task page', function (User $user
     fn() => User::factory()->create(['role_id' => Role::ROLE_MANAGER]),
 ]);
 
-it('allows administrator and manager to enter update page for any task', function (User $user) {
-    $task = Task::factory()->create(['user_id' => User::factory()->create()->id]);
+it('creates task with the correct team', function () {
+    $admin = User::factory()
+        ->create(['role_id' => Role::ROLE_ADMIN]);
 
-    actingAs($user)
+    actingAs($admin)
+        ->post(route('tasks.store', [
+            'name' => 'created by admin',
+        ]))
+        ->assertRedirect();
+
+    $task = Task::latest()->first();
+    expect($task->team_id)->toBe($admin->team_id);
+});
+
+it('allows to access task edit page for same team but not different team', function () {
+    $admin = User::factory()->create(['role_id' => Role::ROLE_ADMIN]);
+    $manager = User::factory()->create(['role_id' => Role::ROLE_MANAGER, 'team_id' => $admin->team_id]);
+    $adminFromOtherTeam = User::factory()->create(['role_id' => Role::ROLE_ADMIN]);
+    $task = Task::factory()->create(['user_id' => $admin->id, 'team_id' => $admin->team_id]);
+
+    actingAs($admin)
         ->get(route('tasks.edit', $task))
         ->assertOk();
-})->with([
-    fn() => User::factory()->create(['role_id' => Role::ROLE_ADMIN]),
-    fn() => User::factory()->create(['role_id' => Role::ROLE_MANAGER]),
-]);
 
-it('allows administrator and manager to update any task', function (User $user) {
-    $task = Task::factory()->create(['user_id' => User::factory()->create()->id]);
+    actingAs($manager)
+        ->get(route('tasks.edit', $task))
+        ->assertOk();
 
-    actingAs($user)
+    actingAs($adminFromOtherTeam)
+        ->get(route('tasks.edit', $task))
+        ->assertNotFound();
+});
+
+it('allows task update for same team but not different team', function () {
+    $admin = User::factory()->create(['role_id' => Role::ROLE_ADMIN]);
+    $manager = User::factory()->create(['role_id' => Role::ROLE_MANAGER, 'team_id' => $admin->team_id]);
+    $adminFromOtherTeam = User::factory()->create(['role_id' => Role::ROLE_ADMIN]);
+    $task = Task::factory()->create(['user_id' => $admin->id, 'team_id' => $admin->team_id]);
+
+    actingAs($admin)
         ->put(route('tasks.update', $task), [
-            'name' => 'updated task name',
+            'name' => 'updated by admin',
         ])
         ->assertRedirect();
 
-    expect($task->refresh()->name)->toBe('updated task name');
-})->with([
-    fn() => User::factory()->create(['role_id' => Role::ROLE_ADMIN]),
-    fn() => User::factory()->create(['role_id' => Role::ROLE_MANAGER]),
-]);
+    expect($task->refresh()->name)->toBe('updated by admin');
 
-it('allows user to update his own task', function () {
+    actingAs($manager)
+        ->put(route('tasks.update', $task), [
+            'name' => 'updated by manager',
+        ])
+        ->assertRedirect();
+
+    expect($task->refresh()->name)->toBe('updated by manager');
+
+    actingAs($adminFromOtherTeam)
+        ->put(route('tasks.update', $task), [
+            'name' => 'updated by admin from another team',
+        ])
+        ->assertNotFound();
+
+    expect($task->refresh()->name)->toBe('updated by manager');
+});
+
+it('allows user to update their own task', function () {
     $user = User::factory()->create();
     $task = Task::factory()->create(['user_id' => $user->id]);
 
@@ -61,36 +99,23 @@ it('allows user to update his own task', function () {
     expect($task->refresh()->name)->toBe('updated task name');
 });
 
-it('does no allow user to update other users task', function () {
-    $user = User::factory()->create();
-    $task = Task::factory()->create(['user_id' => User::factory()->create()->id]);
-
-    actingAs($user)
-        ->put(route('tasks.update', $task), [
-            'name' => 'updated task name',
-        ])
-        ->assertForbidden();
-});
-
 it('allows administrator to delete task', function () {
-    $task = Task::factory()->create(['user_id' => User::factory()->create()->id]);
-    $user = User::factory()
-        ->create(['role_id' => Role::ROLE_ADMIN]);
+    $admin = User::factory()->create(['role_id' => Role::ROLE_ADMIN]);
+    $task = Task::factory()->create(['user_id' => $admin->id, 'team_id' => $admin->team_id]);
 
-    actingAs($user)
+    actingAs($admin)
         ->delete(route('tasks.destroy', $task))
         ->assertRedirect();
 
     expect(Task::count())->toBe(0);
 });
 
-it('does not allow other users to delete tasks', function (User $user) {
-    $task = Task::factory()->create(['user_id' => User::factory()->create()->id]);
+it('does not allow other users to delete tasks', function () {
+    $admin = User::factory()->create(['role_id' => Role::ROLE_ADMIN]);
+    $task = Task::factory()->create(['user_id' => $admin->id, 'team_id' => $admin->team_id]);
+    $user = User::factory()->create(['team_id' => $admin->team_id]);
 
     actingAs($user)
         ->delete(route('tasks.destroy', $task))
         ->assertForbidden();
-})->with([
-    fn() => User::factory()->create(['role_id' => Role::ROLE_USER]),
-    fn() => User::factory()->create(['role_id' => Role::ROLE_MANAGER]),
-]);
+});
